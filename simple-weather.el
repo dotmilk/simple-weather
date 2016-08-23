@@ -22,7 +22,7 @@
                           :snow "❄"
                           :thunderstorm "⚡"))
 
-(defvar sw/open-weather-api-key "85a4e3c55b73909f42c6a23ec35b7147")
+(defvar sw/open-weather-api-key "28269b2a8af5c37613ccf316df28faa7")
 
 (defun sw/current ()
   (interactive)
@@ -36,8 +36,8 @@
   (let* ((url (sw/build-url cmd location))
          (raw-data (url-retrieve-synchronously url)))
     (cond
-     ((eq :forecast cmd) (sw/format-forecast raw-data))
-     ((eq :current cmd) (sw/format-current raw-data)))))
+     ((eq :forecast cmd) (sw/extract-forecast raw-data))
+     ((eq :current cmd) (sw/extract-current raw-data)))))
 
 (defun sw/build-url (cmd location)
   (let* ((url-cmd (cond
@@ -50,36 +50,6 @@
                       (substring (symbol-name sw/units) 1)
                       sw/open-weather-api-key)))
     url))
-
-(defun sw/format-forecast (raw)
-  (let ((forecast (sw/extract-forecast raw)))
-    ;; (mapconcat 'identity forecast " ")
-    forecast
-    ))
-
-(defun sw/format-current (raw)
-  (let* ((weather (sw/modify-for-units (sw/extract-current raw))))
-    (format "%s %s %s %s %s %s %s %s %s%s %s %s %s %s %s%% %s %s %s %s%s"
-            (plist-get sw/texts :current)
-            (plist-get weather :name)
-            (plist-get weather :temperature)
-            (plist-get weather :scale)
-            (plist-get weather :sky-icon)
-            sw/dashes
-            (plist-get sw/texts :wind)
-            sw/delimiter
-            (plist-get weather :wind)
-            (plist-get weather :speed_unit)
-            (plist-get weather :direction)
-            sw/dashes
-            (plist-get sw/texts :humidity)
-            sw/delimiter
-            (plist-get weather :humidity)
-            sw/dashes
-            (plist-get sw/texts :pressure)
-            sw/delimiter
-            (plist-get weather :pressure)
-            (plist-get weather :pressure-unit))))
 
 (defun sw/extract-forecast (raw)
   (with-current-buffer raw
@@ -126,13 +96,11 @@
     (let* ((json-object-type 'plist)
            (json-array-type 'list)
            (result (json-read-from-string (buffer-string)))
-           (main (plist-get result :main))
+           (main (sw/modify-for-units (plist-get result :main)))
            (sys (plist-get result :sys))
            (wind (plist-get result :wind))
-           (sky (plist-get (car (plist-get result :weather))
-                           :main))
+           (sky (plist-get (car (plist-get result :weather)) :main))
            (name (plist-get result :name))
-           (sky-icon (sw/get-icon sky))
            (temperature (plist-get main :temp))
            (humidity (plist-get main :humidity))
            (pressure (plist-get main :pressure))
@@ -142,11 +110,29 @@
            (azimuth (plist-get wind :deg))
            (direction (sw/azimuth-to-cardinal azimuth))
            (period (sw/find-period sunrise sunset)))
-
-      `(:name ,name :sky ,sky :sky-icon ,sky-icon :temperature ,temperature :humidity ,humidity
-              :pressure ,pressure :sunrise ,sunrise :sunset ,sunset
-              :wind ,wind-speed :azimuth ,azimuth :direction ,direction
-              :period ,period))))
+      (mapconcat 'identity `(,(plist-get sw/texts :current)
+                             ,name
+                             ,(format "%.0f" temperature)
+                             ,(plist-get main :scale)
+                             ,(if (equal sky "Clear")
+                                  (plist-get sw/icons period)
+                                (sw/get-icon sky))
+                             ,sw/dashes
+                             ,(plist-get sw/texts :wind)
+                             ,sw/delimiter
+                             ,(format "%0.f" wind-speed)
+                             ,(plist-get main :speed-unit)
+                             ,(format "%s" direction)
+                             ,sw/dashes
+                             ,(plist-get sw/texts :humidity)
+                             ,sw/delimiter
+                             ,(format "%0.f" humidity)
+                             ,sw/dashes
+                             ,(plist-get sw/texts :pressure)
+                             ,sw/delimiter
+                             ,pressure
+                             ,(plist-get main :pressure-unit))
+                 " "))))
 
 (defun sw/epoch-to-date (epoch)
   (format-time-string "%a %b %d" (seconds-to-time epoch)))
@@ -156,11 +142,12 @@
     (nth (round (/ (mod (+ azimuth 11.25) 360) 22.5)) directions)))
 
 (defun sw/find-period (sunrise sunset)
+  (milk-trace `(,sunrise ,sunset))
   (let ((now (current-time))
-        (period 'day))
+        (period :sun))
     (when (or (time-less-p (seconds-to-time sunset) now)
               (time-less-p now (seconds-to-time sunrise)))
-      (setf period 'night))
+      (setf period :moon))
     period))
 ;;(:scale "°C" :speed_unit "m/s" :pressure_unit "hPa")
 (defun sw/modify-for-units (plist)
@@ -175,7 +162,7 @@
                    (format "%0.0f" (plist-get out :pressure)))))
      ((eq :imperial sw/units)
       (setq out (append out
-                        '(:scale "°F" :speed_unit "mph" :pressure_unit "inHg"))
+                        '(:scale "°F" :speed-unit "mph" :pressure-unit "inHg"))
             out (plist-put out
                            :pressure
                            (format "%0.2f" (* 0.0295
