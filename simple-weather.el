@@ -1,3 +1,10 @@
+;;; simple-weather.el --- Quasi-clone of ansiweather
+
+;; Author: dotmilk <dekathexis@gmail.com>
+;; Version: 0.1
+;; Homepage: https://github.com/dotmilk/simple-weather
+
+;;; Code:
 (defvar sw/location "4468261")
 (defvar sw/units :metric)
 (defvar sw/delimiter "=>")
@@ -24,10 +31,12 @@
 
 (defvar sw/open-weather-api-key "28269b2a8af5c37613ccf316df28faa7")
 
+;;;###autoload
 (defun sw/current ()
   (interactive)
   (message "%s" (sw/fetch :current sw/location)))
 
+;;;###autoload
 (defun sw/forecast ()
   (interactive)
   (message "%s" (sw/fetch :forecast sw/location)))
@@ -63,9 +72,9 @@
                   ,(plist-get sw/texts :forecast)
                   ,sw/delimiter))
            (days (plist-get result :list))
-           (collected (subseq (sw/collect-forecast-days days
-                                                        (plist-get result :scale))
-                              0 5)))
+           (collected (cl-subseq (sw/collect-forecast-days days
+                                                           (plist-get result :scale))
+                                 0 5)))
       (concat (mapconcat 'identity out " ")
               " "
               (mapconcat 'identity collected " - ")))))
@@ -142,7 +151,6 @@
     (nth (round (/ (mod (+ azimuth 11.25) 360) 22.5)) directions)))
 
 (defun sw/find-period (sunrise sunset)
-  (milk-trace `(,sunrise ,sunset))
   (let ((now (current-time))
         (period :sun))
     (when (or (time-less-p (seconds-to-time sunset) now)
@@ -173,3 +181,4 @@
   (plist-get sw/icons (intern (concat ":" (downcase status)))))
 
 (provide 'simple-weather)
+;;; simple-weather.el ends here
